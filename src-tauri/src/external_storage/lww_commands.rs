@@ -231,11 +231,26 @@ async fn retry_clock_failure(session: &mut Session, error: ProviderError) -> Res
     if error.kind != ErrorKind::ClockSkew {
         return Err(error);
     }
-    if session.clock_refresh_attempted {
-        return Err(super::clock::after_refresh(error));
-    }
     if session.engine.as_ref().ok_or_else(lww_segment::corrupt)?.admitted_upper().is_ok() {
         return Err(error);
+    }
+    let expired = error
+        .cause
+        .0
+        .as_deref()
+        .is_some_and(|detail| detail.contains("reason=sample-expired"));
+    if expired {
+        let requests = &session.dependencies.as_ref().ok_or_else(lww_segment::corrupt)?.requests;
+        let account = &session.engine.as_ref().ok_or_else(lww_segment::corrupt)?.repository.account;
+        if let Ok(Some(sample)) = requests.clock_sample_after(account, session.fresh_after) {
+            let engine = session.engine.as_mut().ok_or_else(lww_segment::corrupt)?;
+            if engine.admit(&sample).is_ok() && engine.admitted_upper().is_ok() {
+                return Ok(());
+            }
+        }
+    }
+    if session.clock_refresh_attempted {
+        return Err(super::clock::after_refresh(error));
     }
     refresh_clock(session).await
 }

@@ -2,7 +2,7 @@ use super::contract::{ErrorKind, ProviderError, Result};
 
 pub(crate) const MAX_DISCONTINUITY_MS: u64 = 5_000;
 pub(crate) const MAX_SERVER_OFFSET_MS: u64 = 300_000;
-pub(crate) const SAMPLE_LIFETIME_MS: u64 = 15 * 60_000;
+pub(crate) const SAMPLE_LIFETIME_MS: u64 = 24 * 60 * 60_000;
 
 pub(crate) fn failure(stage: &str, reason: &str, facts: impl std::fmt::Display) -> ProviderError {
     let facts = facts.to_string();

@@ -512,7 +512,7 @@ mod admission_clock_tests {
         assert_eq!(admission.upper().unwrap(), 1_700_000_000_000);
         admission.set_reading_for_test(1_700_000_060_000, 60_000);
         assert_eq!(admission.upper().unwrap(), 1_700_000_060_000);
-        admission.age_for_test(Duration::from_secs(16 * 60));
+        admission.age_for_test(Duration::from_millis(super::super::clock::SAMPLE_LIFETIME_MS + 60_000));
         assert_eq!(admission.upper().unwrap_err().kind, ErrorKind::ClockSkew);
     }
 
@@ -541,10 +541,11 @@ mod admission_clock_tests {
     #[test]
     fn admission_expires_only_after_fifteen_minutes() {
         let start = 1_700_000_000_000;
+        let limit = super::super::clock::SAMPLE_LIFETIME_MS;
         let mut admission = Admission::synthetic(start);
-        admission.set_reading_for_test(start + 900_000, 900_000);
-        assert_eq!(admission.upper().unwrap(), start + 900_000);
-        admission.set_reading_for_test(start + 900_001, 900_001);
+        admission.set_reading_for_test(start + limit, limit);
+        assert_eq!(admission.upper().unwrap(), start + limit);
+        admission.set_reading_for_test(start + limit + 1, limit + 1);
         assert_eq!(admission.upper().unwrap_err().kind, ErrorKind::ClockSkew);
     }
 

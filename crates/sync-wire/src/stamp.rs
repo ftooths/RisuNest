@@ -81,7 +81,7 @@ pub fn issue_stamp(wall_ms: u64, writer_id: &str, last: Option<&Stamp>, observed
 
 pub const MAX_CLOCK_SKEW_MS: u64 = 300_000;
 pub const MAX_CLOCK_DISCONTINUITY_MS: u64 = 5_000;
-pub const CLOCK_SAMPLE_LIFETIME_MS: u64 = 900_000;
+pub const CLOCK_SAMPLE_LIFETIME_MS: u64 = 86_400_000;
 
 /// Times are captured around one successful, fresh target response.
 #[derive(Clone, Debug)]

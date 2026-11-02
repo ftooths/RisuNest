@@ -897,7 +897,7 @@
             {@const job = activeJob(connection)}
             {@const ProviderIcon = providerIcon(connection.providerId)}
             {@const badge = connectionBadge(connection)}
-            {@const renewable = connection.status === 'reauth-required' || job?.error?.action === 'reauthenticate'}
+            {@const renewable = connection.status === 'reauth-required' || job?.error?.action === 'reauthenticate' || ['reauthRequired', 'unauthorized'].includes(externalErrorKind(syncFailures.get(connection.id)) ?? '')}
             {@const lockable = connection.status === 'key-locked' || job?.error?.action === 'unlock-key'}
             {@const recheckable = job?.state === 'uncertain' && job.kind === 'backup'}
             {@const retryable = !!job && externalJobIsPaused(job) && ['retry', 'wait', 'free-space'].includes(job.error?.action ?? '') && ['backup', 'cleanup', 'restore', 'check-repository', 'pin-history', 'delete-history'].includes(job.kind)}

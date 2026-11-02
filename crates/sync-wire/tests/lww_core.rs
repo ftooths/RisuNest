@@ -39,7 +39,7 @@ fn clock_admission_is_target_specific_fresh_and_includes_uncertainty() {
     assert_eq!(clock.admit_incoming("target", 100, &stamp(1_300_101, 0)), Err(WireError("incoming-clock-skew")));
     clock.admit_incoming("target", 100, &stamp(0, 0)).unwrap();
     assert!(clock.incoming_upper_ms("other", 100).is_err());
-    assert!(clock.incoming_upper_ms("target", 900_100).is_err());
+    assert!(clock.incoming_upper_ms("target", CLOCK_SAMPLE_LIFETIME_MS + 100).is_err());
     let mut bad = sample(); bad.target_ms += MAX_CLOCK_SKEW_MS;
     assert_eq!(bad.admit().unwrap_err(), WireError("clock-skew"));
     for movement in [-5001_i64, -5000, -4999, 0, 4999, 5000, 5001] {
