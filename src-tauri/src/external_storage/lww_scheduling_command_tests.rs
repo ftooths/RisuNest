@@ -144,6 +144,14 @@ fn invalid_routine_admission_refreshes_once_and_preserves_clock_failure_details(
                 session.engine.as_mut().unwrap().admission.as_mut().unwrap()
                     .age_for_test(expired_age);
                 let expired = session.engine.as_ref().unwrap().admitted_upper().unwrap_err();
+                // A server Date observed after control resumed re-admits without a new request.
+                retry_clock_failure(&mut session, expired).await.unwrap();
+                assert!(session.engine.as_ref().unwrap().admitted_upper().is_ok());
+                assert_eq!(server.requests.lock().unwrap().len(), requests_before);
+                session.engine.as_mut().unwrap().admission.as_mut().unwrap()
+                    .age_for_test(expired_age);
+                session.fresh_after = Instant::now();
+                let expired = session.engine.as_ref().unwrap().admitted_upper().unwrap_err();
                 let error = retry_clock_failure(&mut session, expired).await.unwrap_err();
                 assert!(error.cause.0.unwrap().contains("reason=sample-expired"));
                 assert_eq!(server.requests.lock().unwrap().len(), requests_before,
