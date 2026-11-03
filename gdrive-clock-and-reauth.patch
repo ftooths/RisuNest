@@ -1,3 +1,49 @@
+diff --git a/.github/workflows/windows-package-check.yml b/.github/workflows/windows-package-check.yml
+new file mode 100644
+index 0000000..d891bd4
+--- /dev/null
++++ b/.github/workflows/windows-package-check.yml
+@@ -0,0 +1,40 @@
++name: Windows package check
++
++on:
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++jobs:
++  windows:
++    runs-on: windows-2022
++    timeout-minutes: 60
++    env:
++      CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target
++      VITE_RISU_LEGAL_CONFIGURED: "TRUE"
++    steps:
++      - uses: actions/checkout@v4
++      - uses: pnpm/action-setup@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 24
++          cache: pnpm
++          cache-dependency-path: pnpm-lock.yaml
++      - uses: dtolnay/rust-toolchain@1.97.1
++        with:
++          targets: x86_64-pc-windows-msvc
++      - uses: Swatinem/rust-cache@v2
++        with:
++          workspaces: src-tauri -> target
++          key: windows-2022-package
++      - run: pnpm install --frozen-lockfile
++      - name: Build Windows NSIS installer and binary
++        run: pnpm windows:build
++      - uses: actions/upload-artifact@v4
++        with:
++          name: risunest-windows-x86_64
++          if-no-files-found: error
++          path: |
++            src-tauri/target/x86_64-pc-windows-msvc/release/RisuNest.exe
++            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
 diff --git a/crates/sync-wire/src/stamp.rs b/crates/sync-wire/src/stamp.rs
 index 6b0adf6..ec21b5a 100644
 --- a/crates/sync-wire/src/stamp.rs
