@@ -512,7 +512,7 @@ mod admission_clock_tests {
         assert_eq!(admission.upper().unwrap(), 1_700_000_000_000);
         admission.set_reading_for_test(1_700_000_060_000, 60_000);
         assert_eq!(admission.upper().unwrap(), 1_700_000_060_000);
-        admission.age_for_test(Duration::from_secs(16 * 60));
+        admission.age_for_test(Duration::from_millis(super::super::clock::SAMPLE_LIFETIME_MS + 60_000));
         assert_eq!(admission.upper().unwrap_err().kind, ErrorKind::ClockSkew);
     }
 
@@ -541,10 +541,11 @@ mod admission_clock_tests {
     #[test]
     fn admission_expires_only_after_fifteen_minutes() {
         let start = 1_700_000_000_000;
+        let limit = super::super::clock::SAMPLE_LIFETIME_MS;
         let mut admission = Admission::synthetic(start);
-        admission.set_reading_for_test(start + 900_000, 900_000);
-        assert_eq!(admission.upper().unwrap(), start + 900_000);
-        admission.set_reading_for_test(start + 900_001, 900_001);
+        admission.set_reading_for_test(start + limit, limit);
+        assert_eq!(admission.upper().unwrap(), start + limit);
+        admission.set_reading_for_test(start + limit + 1, limit + 1);
         assert_eq!(admission.upper().unwrap_err().kind, ErrorKind::ClockSkew);
     }
 
@@ -2282,19 +2283,56 @@ impl ExternalLwwEngine {
         let mut future_error = None;
         let mut received = 0;
         let mut staged = 0;
+        enum ReceiveStep {
+            VerifySeen { writer: String, seq: u64, hash: String },
+            Download { writer: String, seq: u64, hash: String, receipt: ObjectReceipt },
+        }
+        let mut expected = prefixes.clone();
+        let mut steps = Vec::new();
         for ((writer, seq), (hash, receipt)) in groups {
+            let prefix = expected.get(&writer).copied().unwrap_or(0);
+            if seq <= prefix {
+                steps.push(ReceiveStep::VerifySeen { writer, seq, hash });
+                continue;
+            }
+            if seq == prefix.checked_add(1).ok_or_else(segment::corrupt)? {
+                expected.insert(writer.clone(), seq);
+                steps.push(ReceiveStep::Download { writer, seq, hash, receipt });
+            }
+        }
+        use futures::StreamExt;
+        let width = self.provider.transfer_concurrency().clamp(1, 4);
+        let skip_writers = std::sync::Mutex::new(BTreeSet::<String>::new());
+        let skip_ref = &skip_writers;
+        let mut stream = futures::stream::iter(steps)
+            .map(|step| async move {
+                match step {
+                    ReceiveStep::VerifySeen { writer, seq, hash } => (writer, seq, hash, None),
+                    ReceiveStep::Download { writer, seq, hash, receipt } => {
+                        if skip_ref.lock().unwrap_or_else(|e| e.into_inner()).contains(&writer) {
+                            return (writer, seq, hash, None);
+                        }
+                        let bytes = read_bytes(self.provider.as_ref(), &self.repository, &receipt.locator, cancel).await;
+                        (writer, seq, hash, Some(bytes))
+                    }
+                }
+            })
+            .buffered(width);
+        while let Some((writer, seq, hash, downloaded)) = stream.next().await {
             if held.contains(&writer) {
                 continue;
             }
             let prefix = prefixes.get(&writer).copied().unwrap_or(0);
-            if seq <= prefix {
-                store.external_lww_verify_seen(&target, &writer, seq, &hash).map_err(store_error)?;
+            let Some(bytes) = downloaded else {
+                if seq <= prefix {
+                    store.external_lww_verify_seen(&target, &writer, seq, &hash).map_err(store_error)?;
+                }
                 continue;
-            }
+            };
             if seq != prefix.checked_add(1).ok_or_else(segment::corrupt)? {
                 continue;
             }
-            let bytes = read_bytes(self.provider.as_ref(), &self.repository, &receipt.locator, cancel).await?;
+            let bytes = bytes?;
             if segment::digest(&bytes) != hash {
                 return Err(segment::corrupt());
             }
@@ -2303,6 +2341,7 @@ impl ExternalLwwEngine {
             store.external_lww_verify_seen(&target, &writer, seq, &hash).map_err(store_error)?;
             if let Some(change) = payload.changes.iter().find(|change| change.stamp.physical_ms.0 > upper.0) {
                 future_error = Some(super::clock::future_change("receive", change.stamp.physical_ms.0, upper.0));
+                skip_writers.lock().unwrap_or_else(|e| e.into_inner()).insert(writer.clone());
                 held.insert(writer);
                 continue;
             }

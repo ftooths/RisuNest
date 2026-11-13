@@ -1303,8 +1303,8 @@ mod tests {
         store.put_pending(&pending).unwrap();
         let stored = store.promote_pending(&pending.id, locator("synthetic"), Capabilities::default()).unwrap();
         assert_eq!(stored.transfer_concurrency, None);
-        assert_eq!(super::super::connection::summary(&stored).transfer_concurrency, 4);
-        assert_eq!(super::super::transfer_limit::effective_limit(root.path(), &stored.id).unwrap(), 4);
+        assert_eq!(super::super::connection::summary(&stored).transfer_concurrency, 8);
+        assert_eq!(super::super::transfer_limit::effective_limit(root.path(), &stored.id).unwrap(), 8);
         super::super::transfer_limit::set_limit(root.path(), &stored.id, 16).unwrap();
         assert_eq!(super::super::transfer_limit::effective_limit(root.path(), &stored.id).unwrap(), 16);
         for invalid in [0, 17, usize::MAX] {

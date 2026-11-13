@@ -68,6 +68,19 @@ jobs:
         shell: bash
         run: git status --short --untracked-files=all -- src-tauri/gen/android > "$RUNNER_TEMP/android-gen.status.before"
 
+      - name: Install fixed debug keystore
+        env:
+          KS: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
+        shell: bash
+        run: |
+          if [ -z "${KS:-}" ]; then
+            echo "ANDROID_DEBUG_KEYSTORE_B64 not set; skipping fixed debug keystore."
+            exit 0
+          fi
+          mkdir -p ~/.android
+          printf '%s' "$KS" | tr -d '[:space:]' | base64 -d > ~/.android/debug.keystore
+          keytool -list -keystore ~/.android/debug.keystore -storepass android
+
       - name: Build arm64 debug APK
         run: pnpm android:build:arm64
 
@@ -87,6 +100,21 @@ jobs:
             throw "Expected exactly one arm64 debug APK, found $($apks.Count)."
           }
           $apk = $apks[0]
+          $ks = Join-Path $HOME '.android/debug.keystore'
+          $requireFixed = ($env:GITHUB_REPOSITORY -eq 'ftooths/RisuNest' -and $env:GITHUB_EVENT_NAME -ne 'pull_request')
+          if (Test-Path -LiteralPath $ks -PathType Leaf) {
+            $apksigner = Join-Path $env:ANDROID_HOME 'build-tools/36.0.0/apksigner'
+            & $apksigner sign --ks $ks --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android $apk.FullName
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $certs = & $apksigner verify --print-certs $apk.FullName
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $certs
+            if ($requireFixed -and (($certs | Out-String) -notmatch 'd5eeed1ad6940a820d5d6164f4c636e662aebc12823169267070255902b08683')) {
+              throw 'APK signing certificate SHA-256 mismatch.'
+            }
+          } elseif ($requireFixed) {
+            throw "Fixed debug keystore missing at $ks."
+          }
           & ./util/checkAndroidAlignment.ps1 -ApkPath $apk.FullName *>&1 |
             Tee-Object -FilePath android-alignment.log
           if ($LASTEXITCODE -ne 0) {

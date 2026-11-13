@@ -232,6 +232,20 @@ async fn retry_clock_failure(session: &mut Session, error: ProviderError) -> Res
         return Err(error);
     }
     if session.clock_refresh_attempted {
+        // Long transfers can outlive the admitted sample after the single refresh
+        // was spent. A server Date observed after control resumed is still a
+        // fresh, validated proof, so admit it instead of failing the round.
+        let expired = error.cause.0.as_deref().is_some_and(|detail| detail.contains("stage=admission"));
+        if expired {
+            let engine = session.engine.as_mut().ok_or_else(lww_segment::corrupt)?;
+            let requests = &session.dependencies.as_ref().ok_or_else(lww_segment::corrupt)?.requests;
+            if let Ok(Some(sample)) = requests.clock_sample_after(&engine.repository.account, session.fresh_after) {
+                if engine.admit(&sample).is_ok() && engine.admitted_upper().is_ok() {
+                    return Ok(());
+                }
+                engine.invalidate_clock();
+            }
+        }
         return Err(super::clock::after_refresh(error));
     }
     if session.engine.as_ref().ok_or_else(lww_segment::corrupt)?.admitted_upper().is_ok() {

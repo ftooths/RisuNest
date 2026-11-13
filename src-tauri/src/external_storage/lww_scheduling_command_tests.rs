@@ -92,7 +92,8 @@ fn invalid_routine_admission_refreshes_once_and_preserves_clock_failure_details(
             engine.provider = provider;
             engine.repository = repository;
             let mut admission = Admission::synthetic(runtime::now_ms());
-            if phase == "entry" { admission.age_for_test(std::time::Duration::from_secs(16 * 60)); }
+            let expired_age = std::time::Duration::from_millis(super::super::clock::SAMPLE_LIFETIME_MS + 60_000);
+            if phase == "entry" { admission.age_for_test(expired_age); }
             engine.admission = Some(admission);
             if phase == "entry" { assert_eq!(engine.admitted_upper().unwrap_err().kind, ErrorKind::ClockSkew); }
             let mut session = Session::new();
@@ -109,7 +110,7 @@ fn invalid_routine_admission_refreshes_once_and_preserves_clock_failure_details(
                 assert_eq!(retry_clock_failure(&mut session, held.clone()).await.unwrap_err().cause.0, held.cause.0);
                 assert!(!session.clock_refresh_attempted, "a future stamp does not invalidate a valid admission");
                 session.engine.as_mut().unwrap().admission.as_mut().unwrap()
-                    .age_for_test(std::time::Duration::from_secs(16 * 60));
+                    .age_for_test(expired_age);
                 if phase == "publish" {
                     let published = publish_round(&mut session, &mut fixture.b, 0.into(), &[], Some(1)).await;
                     published.map(|value| assert_eq!(value.segments.0, 0))
@@ -141,7 +142,15 @@ fn invalid_routine_admission_refreshes_once_and_preserves_clock_failure_details(
                 admit_clock(&mut session).await.unwrap();
                 let requests_before = server.requests.lock().unwrap().len();
                 session.engine.as_mut().unwrap().admission.as_mut().unwrap()
-                    .age_for_test(std::time::Duration::from_secs(16 * 60));
+                    .age_for_test(expired_age);
+                let expired = session.engine.as_ref().unwrap().admitted_upper().unwrap_err();
+                // A server Date observed after control resumed re-admits without a new request.
+                retry_clock_failure(&mut session, expired).await.unwrap();
+                assert!(session.engine.as_ref().unwrap().admitted_upper().is_ok());
+                assert_eq!(server.requests.lock().unwrap().len(), requests_before);
+                session.engine.as_mut().unwrap().admission.as_mut().unwrap()
+                    .age_for_test(expired_age);
+                session.fresh_after = Instant::now();
                 let expired = session.engine.as_ref().unwrap().admitted_upper().unwrap_err();
                 let error = retry_clock_failure(&mut session, expired).await.unwrap_err();
                 assert!(error.cause.0.unwrap().contains("reason=sample-expired"));

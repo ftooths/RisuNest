@@ -3,7 +3,7 @@ use super::{capabilities::Capabilities, connection_store::ConnectionStore, contr
 use std::{collections::BTreeMap, path::{Path, PathBuf}, sync::{Arc, Mutex, OnceLock}};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-pub(crate) const DEFAULT: usize = 4;
+pub(crate) const DEFAULT: usize = 8;
 pub(crate) fn validate(value: usize) -> Result<()> {
     if (1..=16).contains(&value) { Ok(()) } else { Err(ProviderError::new(ErrorKind::PreconditionFailed)) }
 }
@@ -287,7 +287,7 @@ mod tests {
             assert_eq!(wrapped.transfer_concurrency(), 1);
             assert_eq!(super::super::progress::Observer::default().wrap(wrapped.clone()).transfer_concurrency(), 1);
             assert_eq!(reopened.transfer_concurrency(), 1);
-            assert_eq!(effective_limit(root.path(), "second").unwrap(), 4);
+            assert_eq!(effective_limit(root.path(), "second").unwrap(), 8);
             let cancel = Cancellation::default();
             let active = first.acquire(&cancel).await.unwrap();
             remove_connection(root.path(), "first").unwrap();
@@ -295,7 +295,7 @@ mod tests {
             ConnectionStore::open(root.path()).unwrap().insert(&stored).unwrap();
             let replacement = limiter(root.path(), "first").unwrap();
             assert!(!Arc::ptr_eq(&first, &replacement));
-            assert_eq!(replacement.target(), 4);
+            assert_eq!(replacement.target(), 8);
             assert_eq!(first.semaphore.available_permits(), 0);
             drop(active);
             assert_eq!(first.semaphore.available_permits(), 1);
